@@ -1,12 +1,16 @@
 [submodule "DiligentCore"]
 	path = DiligentCore
 	url = https://github.com/MathMind0/DiligentCore.git
+	branch = viben-custom
 [submodule "DiligentTools"]
 	path = DiligentTools
 	url = https://github.com/MathMind0/DiligentTools.git
+	branch = viben-custom
 [submodule "DiligentSamples"]
 	path = DiligentSamples
 	url = https://github.com/MathMind0/DiligentSamples.git
+	branch = viben-custom
 [submodule "DiligentFX"]
 	path = DiligentFX
 	url = https://github.com/MathMind0/DiligentFX.git
+	branch = viben-custom
