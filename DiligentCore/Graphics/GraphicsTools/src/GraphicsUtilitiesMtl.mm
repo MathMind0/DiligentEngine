@@ -30,12 +30,10 @@
 
 #include "RenderDeviceMtl.h"
 #include "RefCntAutoPtr.hpp"
+#include "MetalTypeConversions.h"
 
 namespace Diligent
 {
-
-MTLPixelFormat TextureFormatToMTLPixelFormat(TEXTURE_FORMAT TexFormat);
-TEXTURE_FORMAT MTLPixelFormatToTextureFormat(MTLPixelFormat mtlPixelFormat);
 
 void CreateSparseTextureMtl(IRenderDevice*     pDevice,
                             const TextureDesc& TexDesc,
@@ -59,12 +57,12 @@ void CreateSparseTextureMtl(IRenderDevice*     pDevice,
 
 int64_t GetNativeTextureFormatMtl(TEXTURE_FORMAT TexFormat)
 {
-    return static_cast<int64_t>(TextureFormatToMTLPixelFormat(TexFormat));
+    return static_cast<int64_t>(TexFormatToMtlPixelFormat(TexFormat));
 }
 
 TEXTURE_FORMAT GetTextureFormatFromNativeMtl(int64_t NativeFormat)
 {
-    return MTLPixelFormatToTextureFormat(static_cast<MTLPixelFormat>(NativeFormat));
+    return MtlPixelFormatToTexFormat(static_cast<MTLPixelFormat>(NativeFormat));
 }
 
 } // namespace Diligent

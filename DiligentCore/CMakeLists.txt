@@ -260,11 +260,8 @@ if(PLATFORM_IOS OR PLATFORM_TVOS)
 endif()
 
 if(PLATFORM_APPLE)
-    if(${DILIGENT_CORE_PRO_EXISTS})
-        set(METAL_SUPPORTED TRUE CACHE INTERNAL "Metal is supported on Apple platforms")
-    else()
-        message("DiligentCorePro module is not found. Metal backend will be disabled")
-    endif()
+    # Enable Metal backend (custom implementation)
+    set(METAL_SUPPORTED TRUE CACHE INTERNAL "Metal is supported on Apple platforms (custom implementation)")
 endif()
 
 if(PLATFORM_WIN32 OR PLATFORM_LINUX OR PLATFORM_MACOS OR PLATFORM_WEB)

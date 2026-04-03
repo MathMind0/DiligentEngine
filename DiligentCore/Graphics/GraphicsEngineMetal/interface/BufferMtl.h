@@ -29,6 +29,9 @@
 
 #include "../../GraphicsEngine/interface/Buffer.h"
 
+// Forward declarations for Metal protocols (for pure C/C++ compilation)
+@protocol MTLBuffer;
+
 DILIGENT_BEGIN_NAMESPACE(Diligent)
 
 // {F8A1A3AC-923A-419D-AB9D-FE9E35DC654B}

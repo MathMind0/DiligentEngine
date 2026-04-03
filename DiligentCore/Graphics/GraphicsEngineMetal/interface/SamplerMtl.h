@@ -29,6 +29,9 @@
 
 #include "../../GraphicsEngine/interface/Sampler.h"
 
+// Forward declarations for Metal protocols (for pure C/C++ compilation)
+@protocol MTLSamplerState;
+
 DILIGENT_BEGIN_NAMESPACE(Diligent)
 
 // {73F8C099-049B-4C81-AD19-C98963AC7FEB}

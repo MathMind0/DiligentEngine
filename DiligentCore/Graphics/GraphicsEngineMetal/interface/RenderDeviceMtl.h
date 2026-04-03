@@ -30,9 +30,12 @@
 #include "../../GraphicsEngine/interface/RenderDevice.h"
 #include "RasterizationRateMapMtl.h"
 
-#if PLATFORM_TVOS
-@protocol MTLAccelerationStructure; // Not available in tvOS
-#endif
+// Forward declarations for Metal protocols (for pure C/C++ compilation)
+@protocol MTLDevice;
+@protocol MTLTexture;
+@protocol MTLBuffer;
+@protocol MTLAccelerationStructure;
+@protocol MTLRasterizationRateMap;
 
 DILIGENT_BEGIN_NAMESPACE(Diligent)
 
@@ -73,19 +76,19 @@ DILIGENT_BEGIN_INTERFACE(IRenderDeviceMtl, IRenderDevice)
                                                    id<MTLAccelerationStructure> mtlBLAS,
                                                    const BottomLevelASDesc REF  Desc,
                                                    RESOURCE_STATE               InitialState,
-                                                   IBottomLevelAS**             ppBLAS) API_AVAILABLE(ios(14), macosx(11.0)) API_UNAVAILABLE(tvos) PURE;
+                                                   IBottomLevelAS**             ppBLAS) PURE;
 
     /// Creates a buffer from existing Metal resource
     VIRTUAL void METHOD(CreateTLASFromMtlResource)(THIS_
                                                    id<MTLAccelerationStructure> mtlTLAS,
                                                    const TopLevelASDesc REF     Desc,
                                                    RESOURCE_STATE               InitialState,
-                                                   ITopLevelAS**                ppTLAS) API_AVAILABLE(ios(14), macosx(11.0)) API_UNAVAILABLE(tvos) PURE;
+                                                   ITopLevelAS**                ppTLAS) PURE;
 
     /// Creates a rasterization rate map from existing Metal resource
     VIRTUAL void METHOD(CreateRasterizationRateMapFromMtlResource)(THIS_
                                                                    id<MTLRasterizationRateMap> mtlRRM,
-                                                                   IRasterizationRateMapMtl**  ppRRM) API_AVAILABLE(ios(13), macosx(10.15.4)) API_UNAVAILABLE(tvos) PURE;
+                                                                   IRasterizationRateMapMtl**  ppRRM) PURE;
 
     /// Creates a rasterization rate map
     VIRTUAL void METHOD(CreateRasterizationRateMap)(THIS_

@@ -9,7 +9,7 @@
  *
  *  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  *  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- *  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT OF ANY PROPRIETARY RIGHTS.
+ *  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. OF ANY PROPRIETARY RIGHTS.
  *
  *  In no event and under no legal theory, whether in tort (including negligence),
  *  contract, or otherwise, unless required by applicable law (such as deliberate
@@ -28,6 +28,9 @@
 /// Definition of the Diligent::IFenceMtl interface
 
 #include "../../GraphicsEngine/interface/Fence.h"
+
+// Forward declarations for Metal protocols (for pure C/C++ compilation)
+@protocol MTLSharedEvent;
 
 DILIGENT_BEGIN_NAMESPACE(Diligent)
 
@@ -48,7 +51,7 @@ static DILIGENT_CONSTEXPR INTERFACE_ID IID_FenceMtl =
 DILIGENT_BEGIN_INTERFACE(IFenceMtl, IFence)
 {
     /// Returns a pointer to Metal shared event (MTLSharedEvent)
-    VIRTUAL id<MTLSharedEvent> METHOD(GetMtlSharedEvent)(THIS) CONST API_AVAILABLE(ios(12), macosx(10.14), tvos(12.0)) PURE;
+    VIRTUAL id<MTLSharedEvent> METHOD(GetMtlSharedEvent)(THIS) CONST PURE;
 };
 DILIGENT_END_INTERFACE
 
