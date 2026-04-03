@@ -9,7 +9,7 @@
  *
  *  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  *  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- *  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT OF ANY PROPRIETARY RIGHTS.
+ *  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. OF ANY PROPRIETARY RIGHTS.
  *
  *  In no event and under no legal theory, whether in tort (including negligence),
  *  contract, or otherwise, unless required by applicable law (such as deliberate
@@ -30,6 +30,9 @@
 #include "../../GraphicsEngine/interface/DeviceContext.h"
 #include "CommandQueueMtl.h"
 #include "RasterizationRateMapMtl.h"
+
+// Forward declarations for Metal protocols (for pure C/C++ compilation)
+@protocol MTLCommandBuffer;
 
 DILIGENT_BEGIN_NAMESPACE(Diligent)
 
@@ -85,7 +88,7 @@ DILIGENT_BEGIN_INTERFACE(IDeviceContextMtl, IDeviceContext)
     VIRTUAL void METHOD(SetTileThreadgroupMemoryLength)(THIS_
                                                         Uint32 Length,
                                                         Uint32 Offset,
-                                                        Uint32 Index) API_AVAILABLE(ios(11), macosx(11.0), tvos(14.5)) PURE;
+                                                        Uint32 Index) PURE;
 };
 DILIGENT_END_INTERFACE
 

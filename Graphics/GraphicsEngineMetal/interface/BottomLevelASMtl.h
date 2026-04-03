@@ -9,7 +9,7 @@
  *
  *  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  *  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- *  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT OF ANY PROPRIETARY RIGHTS.
+ *  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. ANY PROPRIETARY RIGHTS.
  *
  *  In no event and under no legal theory, whether in tort (including negligence),
  *  contract, or otherwise, unless required by applicable law (such as deliberate
@@ -28,6 +28,9 @@
 /// Definition of the Diligent::IBottomLevelASMtl interface
 
 #include "../../GraphicsEngine/interface/BottomLevelAS.h"
+
+// Forward declarations for Metal protocols (for pure C/C++ compilation)
+@protocol MTLAccelerationStructure;
 
 DILIGENT_BEGIN_NAMESPACE(Diligent)
 
@@ -48,7 +51,7 @@ static DILIGENT_CONSTEXPR INTERFACE_ID IID_BottomLevelASMtl =
 DILIGENT_BEGIN_INTERFACE(IBottomLevelASMtl, IBottomLevelAS)
 {
     /// Returns a pointer to a Metal acceleration structure object.
-    VIRTUAL id<MTLAccelerationStructure> METHOD(GetMtlAccelerationStructure)(THIS) CONST API_AVAILABLE(ios(14), macosx(11.0)) API_UNAVAILABLE(tvos) PURE;
+    VIRTUAL id<MTLAccelerationStructure> METHOD(GetMtlAccelerationStructure)(THIS) CONST PURE;
 };
 DILIGENT_END_INTERFACE
 

@@ -29,6 +29,11 @@
 
 #include "../../GraphicsEngine/interface/PipelineState.h"
 
+// Forward declarations for Metal protocols (for pure C/C++ compilation)
+@protocol MTLRenderPipelineState;
+@protocol MTLComputePipelineState;
+@protocol MTLDepthStencilState;
+
 DILIGENT_BEGIN_NAMESPACE(Diligent)
 
 // {B6A17C51-CCA9-44E1-A2DC-5DE250CF85AD}

@@ -31,6 +31,10 @@
 
 #include "../../GraphicsEngine/interface/CommandQueue.h"
 
+// Forward declarations for Metal protocols (for pure C/C++ compilation)
+@protocol MTLCommandQueue;
+@protocol MTLCommandBuffer;
+
 DILIGENT_BEGIN_NAMESPACE(Diligent)
 
 // {1C0013CB-41B8-453D-8983-4D935F5973B0}

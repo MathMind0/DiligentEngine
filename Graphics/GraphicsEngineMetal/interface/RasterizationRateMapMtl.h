@@ -31,9 +31,8 @@
 #include "../../GraphicsEngine/interface/Buffer.h"
 #include "../../GraphicsEngine/interface/TextureView.h"
 
-#if PLATFORM_TVOS
-@protocol MTLRasterizationRateMap; // Not available in tvOS
-#endif
+// Forward declarations for Metal protocols (for pure C/C++ compilation)
+@protocol MTLRasterizationRateMap;
 
 DILIGENT_BEGIN_NAMESPACE(Diligent)
 
@@ -107,7 +106,7 @@ DILIGENT_BEGIN_INTERFACE(IRasterizationRateMapMtl, IDeviceObject)
 #endif
 
     /// Returns a pointer to the Metal rasterization rate map object.
-    VIRTUAL id<MTLRasterizationRateMap> METHOD(GetMtlResource)(THIS) CONST API_AVAILABLE(ios(13), macosx(10.15.4), tvos(16.0)) PURE;
+    VIRTUAL id<MTLRasterizationRateMap> METHOD(GetMtlResource)(THIS) CONST PURE;
 
     /// Returns the physical size of the specified layer.
     VIRTUAL void METHOD(GetPhysicalSizeForLayer)(THIS_

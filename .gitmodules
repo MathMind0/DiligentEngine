@@ -1,24 +1,32 @@
 [submodule "ThirdParty/glslang"]
 	path = ThirdParty/glslang
-	url = https://github.com/DiligentGraphics/glslang
+	url = https://github.com/MathMind0/glslang
+	branch = master
 [submodule "ThirdParty/SPIRV-Cross"]
 	path = ThirdParty/SPIRV-Cross
-	url = https://github.com/DiligentGraphics/SPIRV-Cross
+	url = https://github.com/MathMind0/SPIRV-Cross
+	branch = master
 [submodule "ThirdParty/SPIRV-Tools"]
 	path = ThirdParty/SPIRV-Tools
-	url = https://github.com/DiligentGraphics/SPIRV-Tools
+	url = https://github.com/MathMind0/SPIRV-Tools
+	branch = master
 [submodule "ThirdParty/SPIRV-Headers"]
 	path = ThirdParty/SPIRV-Headers
-	url = https://github.com/DiligentGraphics/SPIRV-Headers
+	url = https://github.com/MathMind0/SPIRV-Headers
+	branch = master
 [submodule "ThirdParty/googletest"]
 	path = ThirdParty/googletest
-	url = https://github.com/DiligentGraphics/googletest
+	url = https://github.com/MathMind0/googletest
+	branch = master
 [submodule "ThirdParty/Vulkan-Headers"]
 	path = ThirdParty/Vulkan-Headers
-	url = https://github.com/DiligentGraphics/Vulkan-Headers.git
+	url = https://github.com/MathMind0/Vulkan-Headers.git
+	branch = master
 [submodule "ThirdParty/volk"]
 	path = ThirdParty/volk
-	url = https://github.com/DiligentGraphics/volk.git
+	url = https://github.com/MathMind0/volk.git
+	branch = master
 [submodule "ThirdParty/xxHash"]
 	path = ThirdParty/xxHash
-	url = https://github.com/DiligentGraphics/xxHash
+	url = https://github.com/MathMind0/xxHash
+	branch = dev

@@ -29,6 +29,9 @@
 
 #include "../../GraphicsEngine/interface/DeviceMemory.h"
 
+// Forward declarations for Metal protocols (for pure C/C++ compilation)
+@protocol MTLHeap;
+
 DILIGENT_BEGIN_NAMESPACE(Diligent)
 
 // {FAA1CD77-590A-408B-B0E8-C21CD062542C}

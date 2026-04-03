@@ -43,6 +43,10 @@ if(VULKAN_SUPPORTED)
     add_subdirectory(GraphicsEngineVulkan)
 endif()
 
+if(METAL_SUPPORTED)
+    add_subdirectory(GraphicsEngineMetal)
+endif()
+
 if(GL_SUPPORTED OR GLES_SUPPORTED)
     add_subdirectory(GraphicsEngineOpenGL)
 endif()

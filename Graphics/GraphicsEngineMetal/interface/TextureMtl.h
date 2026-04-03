@@ -29,6 +29,10 @@
 
 #include "../../GraphicsEngine/interface/Texture.h"
 
+// Forward declarations for Metal protocols (for pure C/C++ compilation)
+@protocol MTLResource;
+@protocol MTLHeap;
+
 DILIGENT_BEGIN_NAMESPACE(Diligent)
 
 // {D3A85032-224D-45E5-9825-3AABD61A5EA5}

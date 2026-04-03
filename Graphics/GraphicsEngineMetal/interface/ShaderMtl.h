@@ -29,6 +29,9 @@
 
 #include "../../GraphicsEngine/interface/Shader.h"
 
+// Forward declarations for Metal protocols (for pure C/C++ compilation)
+@protocol MTLFunction;
+
 DILIGENT_BEGIN_NAMESPACE(Diligent)
 
 // {07182C29-CC3B-43B2-99D8-A77F6FECBA82}
