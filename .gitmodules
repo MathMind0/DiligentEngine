@@ -1,33 +1,33 @@
 [submodule "DiligentTools"]
 	path = DiligentTools
-	url = https://github.com/DiligentGraphics/DiligentTools.git
+	url = https://github.com/MathMind0/DiligentTools.git
 [submodule "DiligentSamples"]
 	path = DiligentSamples
-	url = https://github.com/DiligentGraphics/DiligentSamples.git
+	url = https://github.com/MathMind0/DiligentSamples.git
 [submodule "DiligentFX"]
 	path = DiligentFX
-	url = https://github.com/DiligentGraphics/DiligentFX.git
+	url = https://github.com/MathMind0/DiligentFX.git
 [submodule "DiligentCore/ThirdParty/glslang"]
 	path = DiligentCore/ThirdParty/glslang
-	url = https://github.com/DiligentGraphics/glslang
+	url = https://github.com/MathMind0/glslang
 [submodule "DiligentCore/ThirdParty/SPIRV-Cross"]
 	path = DiligentCore/ThirdParty/SPIRV-Cross
-	url = https://github.com/DiligentGraphics/SPIRV-Cross
+	url = https://github.com/MathMind0/SPIRV-Cross
 [submodule "DiligentCore/ThirdParty/SPIRV-Tools"]
 	path = DiligentCore/ThirdParty/SPIRV-Tools
-	url = https://github.com/DiligentGraphics/SPIRV-Tools
+	url = https://github.com/MathMind0/SPIRV-Tools
 [submodule "DiligentCore/ThirdParty/SPIRV-Headers"]
 	path = DiligentCore/ThirdParty/SPIRV-Headers
-	url = https://github.com/DiligentGraphics/SPIRV-Headers
+	url = https://github.com/MathMind0/SPIRV-Headers
 [submodule "DiligentCore/ThirdParty/googletest"]
 	path = DiligentCore/ThirdParty/googletest
-	url = https://github.com/DiligentGraphics/googletest
+	url = https://github.com/MathMind0/googletest
 [submodule "DiligentCore/ThirdParty/Vulkan-Headers"]
 	path = DiligentCore/ThirdParty/Vulkan-Headers
-	url = https://github.com/DiligentGraphics/Vulkan-Headers.git
+	url = https://github.com/MathMind0/Vulkan-Headers.git
 [submodule "DiligentCore/ThirdParty/volk"]
 	path = DiligentCore/ThirdParty/volk
-	url = https://github.com/DiligentGraphics/volk.git
+	url = https://github.com/MathMind0/volk.git
 [submodule "DiligentCore/ThirdParty/xxHash"]
 	path = DiligentCore/ThirdParty/xxHash
-	url = https://github.com/DiligentGraphics/xxHash
+	url = https://github.com/MathMind0/xxHash
