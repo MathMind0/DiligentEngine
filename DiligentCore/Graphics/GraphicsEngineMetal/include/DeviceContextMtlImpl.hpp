@@ -205,6 +205,30 @@ public:
 private:
     // Metal command buffer
     id<MTLCommandBuffer> m_mtlCommandBuffer;
+    
+    // Current render encoder
+    id<MTLRenderCommandEncoder> m_RenderEncoder = nil;
+    
+    // Current pipeline state
+    RefCntAutoPtr<PipelineStateMtlImpl> m_pPipelineState;
+    
+    // Current render targets
+    std::vector<RefCntAutoPtr<ITextureView>> m_RenderTargets;
+    RefCntAutoPtr<ITextureView> m_pDepthStencilTarget;
+    
+    // Vertex buffers
+    static constexpr Uint32 MAX_VERTEX_BUFFERS = 16;
+    id<MTLBuffer> m_VertexBuffers[MAX_VERTEX_BUFFERS] = {nil};
+    NSUInteger m_VertexBufferOffsets[MAX_VERTEX_BUFFERS] = {0};
+    
+    // Index buffer
+    id<MTLBuffer> m_IndexBuffer = nil;
+    NSUInteger m_IndexBufferOffset = 0;
+    MTLIndexType m_IndexType = MTLIndexTypeUInt16;
+    
+    // Render pass state
+    MTLRenderPassDescriptor* m_RenderPassDescriptor = nil;
+    bool m_InRenderPass = false;
 };
 
 } // namespace Diligent

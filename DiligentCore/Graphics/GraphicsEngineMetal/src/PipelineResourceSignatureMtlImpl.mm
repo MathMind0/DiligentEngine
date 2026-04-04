@@ -19,6 +19,7 @@
 #include "PipelineResourceSignatureMtlImpl.hpp"
 #include "RenderDeviceMtlImpl.hpp"
 #include "ShaderResourceBindingMtlImpl.hpp"
+#include "SamplerMtlImpl.hpp"
 #include "FixedLinearAllocator.hpp"
 
 namespace Diligent
@@ -30,19 +31,38 @@ PipelineResourceSignatureMtlImpl::PipelineResourceSignatureMtlImpl(IReferenceCou
     TBase{pRefCounters, pDevice, Desc},
     m_StaticResourceCache{ResourceCacheContentType::Signature}
 {
-    InitializeResourceAttribs();
+    try
+    {
+        Initialize(
+            GetRawAllocator(), Desc, /*CreateImmutableSamplers = */ false,
+            [this]() //
+            {
+                CreateResourceLayouts(/*IsSerialized*/ false);
+            },
+            [this]() //
+            {
+                return ShaderResourceCacheMtl::GetRequiredMemorySize(m_TotalResources);
+            });
+    }
+    catch (...)
+    {
+        Destruct();
+        throw;
+    }
 }
 
 PipelineResourceSignatureMtlImpl::~PipelineResourceSignatureMtlImpl()
 {
 }
 
-void PipelineResourceSignatureMtlImpl::InitializeResourceAttribs()
+void PipelineResourceSignatureMtlImpl::CreateResourceLayouts(const bool IsSerialized)
 {
     const auto& Desc = GetDesc();
     const Uint32 NumResources = Desc.NumResources;
     
-    if (NumResources == 0)
+    m_TotalResources = 0;
+
+    if (NumResources == 0 || Desc.Resources == nullptr)
         return;
 
     // Reserve space for resource attribs
@@ -63,6 +83,7 @@ void PipelineResourceSignatureMtlImpl::InitializeResourceAttribs()
             0                                      // StaticCacheOffset
         );
         CacheOffset += ResDesc.ArraySize;
+        m_TotalResources += ResDesc.ArraySize;
     }
 
     // Initialize static resource cache

@@ -76,10 +76,52 @@ TextureMtlImpl::TextureMtlImpl(IReferenceCounters*        pRefCounters,
     // Set dimensions
     descriptor.width = TexDesc.Width;
     descriptor.height = TexDesc.Height > 0 ? TexDesc.Height : 1;
-    descriptor.depth = TexDesc.Depth > 0 ? TexDesc.Depth : 1;
-    descriptor.mipmapLevelCount = TexDesc.MipLevels > 0 ? TexDesc.MipLevels : 1;
+    
+    // For cube maps, depth must be 1 in Metal
+    if (TexDesc.Type == RESOURCE_DIM_TEX_CUBE || TexDesc.Type == RESOURCE_DIM_TEX_CUBE_ARRAY)
+    {
+        descriptor.depth = 1;
+    }
+    else
+    {
+        descriptor.depth = TexDesc.Depth > 0 ? TexDesc.Depth : 1;
+    }
+    
+    // Calculate mip levels if not specified (Metal requires at least 1)
+    if (TexDesc.MipLevels == 0)
+    {
+        // Calculate max mip levels based on the largest dimension
+        Uint32 maxDim = std::max({descriptor.width, descriptor.height, descriptor.depth});
+        descriptor.mipmapLevelCount = 1;
+        while ((maxDim >>= 1) > 0)
+        {
+            ++descriptor.mipmapLevelCount;
+        }
+    }
+    else
+    {
+        descriptor.mipmapLevelCount = TexDesc.MipLevels;
+    }
+    
     descriptor.sampleCount = TexDesc.SampleCount > 0 ? TexDesc.SampleCount : 1;
-    descriptor.arrayLength = TexDesc.ArraySize > 0 ? TexDesc.ArraySize : 1;
+    
+    // Set array length based on texture type
+    // For cube maps, arrayLength is the number of cube maps (not faces)
+    // For cube map array, ArraySize is the number of cube maps
+    // For cube map (non-array), ArraySize is typically 6 (number of faces) but we need arrayLength = 1
+    if (TexDesc.Type == RESOURCE_DIM_TEX_CUBE)
+    {
+        descriptor.arrayLength = 1;  // Single cube map
+    }
+    else if (TexDesc.Type == RESOURCE_DIM_TEX_CUBE_ARRAY)
+    {
+        // ArraySize is the number of cube maps in the array
+        descriptor.arrayLength = TexDesc.ArraySize > 0 ? TexDesc.ArraySize : 1;
+    }
+    else
+    {
+        descriptor.arrayLength = TexDesc.ArraySize > 0 ? TexDesc.ArraySize : 1;
+    }
     
     // Set usage flags
     MTLTextureUsage usage = MTLTextureUsageUnknown;
@@ -119,6 +161,157 @@ TextureMtlImpl::TextureMtlImpl(IReferenceCounters*        pRefCounters,
     if (TexDesc.Name != nullptr)
     {
         m_mtlTexture.label = [NSString stringWithUTF8String:TexDesc.Name];
+    }
+    
+    // Upload initial data if provided
+    if (pInitData != nullptr && pInitData->pSubResources != nullptr && m_mtlTexture != nil)
+    {
+        // For private storage mode textures, we need to use a staging buffer
+        if (descriptor.storageMode == MTLStorageModePrivate)
+        {
+            // Create a shared staging texture for data upload
+            MTLTextureDescriptor* stagingDesc = [descriptor copy];
+            stagingDesc.storageMode = MTLStorageModeShared;
+            stagingDesc.usage = MTLTextureUsageShaderRead;
+            
+            id<MTLTexture> stagingTexture = [mtlDevice newTextureWithDescriptor:stagingDesc];
+            if (stagingTexture != nil)
+            {
+                // Upload data to staging texture
+                for (Uint32 slice = 0; slice < pInitData->NumSubresources; ++slice)
+                {
+                    const TextureSubResData& subResData = pInitData->pSubResources[slice];
+                    
+                    // Calculate mip level and array slice from subresource index
+                    Uint32 mipLevel = 0;
+                    Uint32 arraySlice = 0;
+                    // Simple calculation assuming one subresource per mip level
+                    // For proper implementation, we'd need to calculate based on texture dimensions
+                    if (TexDesc.Type == RESOURCE_DIM_TEX_1D_ARRAY || 
+                        TexDesc.Type == RESOURCE_DIM_TEX_2D_ARRAY ||
+                        TexDesc.Type == RESOURCE_DIM_TEX_CUBE ||
+                        TexDesc.Type == RESOURCE_DIM_TEX_CUBE_ARRAY)
+                    {
+                        arraySlice = slice;
+                    }
+                    else
+                    {
+                        mipLevel = slice;
+                    }
+                    
+                    MTLRegion region;
+                    Uint32 mipWidth = TexDesc.Width >> mipLevel;
+                    Uint32 mipHeight = TexDesc.Height >> mipLevel;
+                    if (mipWidth == 0) mipWidth = 1;
+                    if (mipHeight == 0) mipHeight = 1;
+                    
+                    if (TexDesc.Type == RESOURCE_DIM_TEX_3D)
+                    {
+                        Uint32 mipDepth = TexDesc.Depth >> mipLevel;
+                        if (mipDepth == 0) mipDepth = 1;
+                        region = MTLRegionMake3D(0, 0, 0, mipWidth, mipHeight, mipDepth);
+                    }
+                    else if (TexDesc.Type == RESOURCE_DIM_TEX_1D || TexDesc.Type == RESOURCE_DIM_TEX_1D_ARRAY)
+                    {
+                        region = MTLRegionMake1D(0, mipWidth);
+                    }
+                    else
+                    {
+                        region = MTLRegionMake2D(0, 0, mipWidth, mipHeight);
+                    }
+                    
+                    [stagingTexture replaceRegion:region
+                                      mipmapLevel:mipLevel
+                                            slice:arraySlice
+                                        withBytes:subResData.pData
+                                      bytesPerRow:subResData.Stride
+                                    bytesPerImage:subResData.DepthStride];
+                }
+                
+                // Copy from staging to private texture using blit encoder
+                const auto& cmdQueue = pDevice->GetCommandQueue(SoftwareQueueIndex{0});
+                id<MTLCommandQueue> mtlCommandQueue = cmdQueue.GetMtlCommandQueue();
+                id<MTLCommandBuffer> commandBuffer = [mtlCommandQueue commandBuffer];
+                id<MTLBlitCommandEncoder> blitEncoder = [commandBuffer blitCommandEncoder];
+                
+                // Copy each mip level and slice
+                for (Uint32 mip = 0; mip < descriptor.mipmapLevelCount; ++mip)
+                {
+                    Uint32 slices = (TexDesc.Type == RESOURCE_DIM_TEX_1D_ARRAY || 
+                                    TexDesc.Type == RESOURCE_DIM_TEX_2D_ARRAY ||
+                                    TexDesc.Type == RESOURCE_DIM_TEX_CUBE ||
+                                    TexDesc.Type == RESOURCE_DIM_TEX_CUBE_ARRAY) ? TexDesc.ArraySize : 1;
+                    
+                    for (Uint32 slice = 0; slice < slices; ++slice)
+                    {
+                        [blitEncoder copyFromTexture:stagingTexture
+                                         sourceSlice:slice
+                                         sourceLevel:mip
+                           toTexture:m_mtlTexture
+                          destinationSlice:slice
+                          destinationLevel:mip
+                                sliceCount:1
+                                  levelCount:1];
+                    }
+                }
+                
+                [blitEncoder endEncoding];
+                [commandBuffer commit];
+                [commandBuffer waitUntilCompleted];
+                
+                stagingTexture = nil; // Release staging texture
+            }
+        }
+        else
+        {
+            // Direct upload for shared/managed storage mode
+            for (Uint32 slice = 0; slice < pInitData->NumSubresources; ++slice)
+            {
+                const TextureSubResData& subResData = pInitData->pSubResources[slice];
+                
+                Uint32 mipLevel = 0;
+                Uint32 arraySlice = 0;
+                if (TexDesc.Type == RESOURCE_DIM_TEX_1D_ARRAY || 
+                    TexDesc.Type == RESOURCE_DIM_TEX_2D_ARRAY ||
+                    TexDesc.Type == RESOURCE_DIM_TEX_CUBE ||
+                    TexDesc.Type == RESOURCE_DIM_TEX_CUBE_ARRAY)
+                {
+                    arraySlice = slice;
+                }
+                else
+                {
+                    mipLevel = slice;
+                }
+                
+                MTLRegion region;
+                Uint32 mipWidth = TexDesc.Width >> mipLevel;
+                Uint32 mipHeight = TexDesc.Height >> mipLevel;
+                if (mipWidth == 0) mipWidth = 1;
+                if (mipHeight == 0) mipHeight = 1;
+                
+                if (TexDesc.Type == RESOURCE_DIM_TEX_3D)
+                {
+                    Uint32 mipDepth = TexDesc.Depth >> mipLevel;
+                    if (mipDepth == 0) mipDepth = 1;
+                    region = MTLRegionMake3D(0, 0, 0, mipWidth, mipHeight, mipDepth);
+                }
+                else if (TexDesc.Type == RESOURCE_DIM_TEX_1D || TexDesc.Type == RESOURCE_DIM_TEX_1D_ARRAY)
+                {
+                    region = MTLRegionMake1D(0, mipWidth);
+                }
+                else
+                {
+                    region = MTLRegionMake2D(0, 0, mipWidth, mipHeight);
+                }
+                
+                [m_mtlTexture replaceRegion:region
+                              mipmapLevel:mipLevel
+                                    slice:arraySlice
+                                withBytes:subResData.pData
+                              bytesPerRow:subResData.Stride
+                            bytesPerImage:subResData.DepthStride];
+            }
+        }
     }
     
     m_IsSparse = false;
@@ -264,6 +457,20 @@ id<MTLHeap> TextureMtlImpl::GetMtlHeap() const
 Uint64 TextureMtlImpl::GetNativeHandle()
 {
     return reinterpret_cast<Uint64>(m_mtlTexture);
+}
+
+void TextureMtlImpl::SetMtlTexture(id<MTLTexture> texture)
+{
+    m_mtlTexture = texture;
+    // Update the texture description to match the actual texture
+    if (texture != nil)
+    {
+        m_Desc.Width = static_cast<Uint32>(texture.width);
+        m_Desc.Height = static_cast<Uint32>(texture.height);
+        m_Desc.MipLevels = static_cast<Uint32>(texture.mipmapLevelCount);
+        m_Desc.ArraySize = static_cast<Uint32>(texture.arrayLength);
+        m_Desc.Format = MtlPixelFormatToTexFormat(texture.pixelFormat);
+    }
 }
 
 void TextureMtlImpl::CreateViewInternal(const TextureViewDesc& ViewDesc,

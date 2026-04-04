@@ -69,6 +69,9 @@ public:
     /// Returns the Metal texture object.
     id<MTLTexture> GetMtlTexture() const { return m_mtlTexture; }
     
+    /// Sets the Metal texture object (used for swap chain back buffer)
+    void SetMtlTexture(id<MTLTexture> texture);
+    
     /// Returns true if this is a sparse texture.
     bool IsSparse() const { return m_IsSparse; }
     

@@ -65,12 +65,13 @@ public:
     using TBase::CopyStaticResources;
 
 private:
-    /// Initializes resource attributes from the signature description
-    void InitializeResourceAttribs();
+    /// Creates resource layouts (called by Initialize)
+    void CreateResourceLayouts(bool IsSerialized);
 
 private:
     std::vector<ResourceAttribs> m_ResourceAttribs;
     ShaderResourceCacheMtl       m_StaticResourceCache;
+    Uint32                       m_TotalResources = 0; // Total resource count for cache sizing
 };
 
 } // namespace Diligent

@@ -45,6 +45,8 @@ public:
     PipelineStateMtlImpl(IReferenceCounters* pRefCounters, RenderDeviceMtlImpl* pDeviceMtl, const ComputePipelineStateCreateInfo& CreateInfo, bool bIsDeviceInternal = false);
     ~PipelineStateMtlImpl();
 
+    void Destruct();
+
     IMPLEMENT_QUERY_INTERFACE2_IN_PLACE(IID_PipelineStateMtl, IID_InternalImpl, TPipelineStateBase)
 
     /// Implementation of IPipelineStateMtl::GetMtlRenderPipeline().

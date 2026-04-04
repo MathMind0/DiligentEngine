@@ -34,6 +34,8 @@ class TextureViewMtlImpl final : public TextureViewBase<EngineMtlImplTraits>
 public:
     using TTextureViewBase = TextureViewBase<EngineMtlImplTraits>;
 
+    IMPLEMENT_QUERY_INTERFACE_IN_PLACE(IID_TextureViewMtl, TTextureViewBase)
+
     TextureViewMtlImpl(IReferenceCounters*                 pRefCounters,
                        RenderDeviceMtlImpl*                pDevice,
                        const TextureViewDesc&              ViewDesc,

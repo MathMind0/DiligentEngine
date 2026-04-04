@@ -75,7 +75,7 @@ void DILIGENT_CALL_TYPE RenderDeviceMtlImpl::CreateGraphicsPipelineState(const G
 
     try
     {
-        PipelineStateMtlImpl* pPipelineStateMtl = NEW_RC_OBJ(m_ShaderObjAllocator, "PipelineState object", PipelineStateMtlImpl)(this, PSOCreateInfo);
+    PipelineStateMtlImpl* pPipelineStateMtl = NEW_RC_OBJ(m_PSOAllocator, "PipelineState object", PipelineStateMtlImpl)(this, PSOCreateInfo);
         pPipelineStateMtl->QueryInterface(IID_PipelineState, reinterpret_cast<IObject**>(ppPipelineState));
     }
     catch (const std::exception& e)
@@ -94,7 +94,7 @@ void DILIGENT_CALL_TYPE RenderDeviceMtlImpl::CreateComputePipelineState(const Co
 
     try
     {
-        PipelineStateMtlImpl* pPipelineStateMtl = NEW_RC_OBJ(m_ShaderObjAllocator, "PipelineState object", PipelineStateMtlImpl)(this, PSOCreateInfo);
+    PipelineStateMtlImpl* pPipelineStateMtl = NEW_RC_OBJ(m_PSOAllocator, "PipelineState object", PipelineStateMtlImpl)(this, PSOCreateInfo);
         pPipelineStateMtl->QueryInterface(IID_PipelineState, reinterpret_cast<IObject**>(ppPipelineState));
     }
     catch (const std::exception& e)
@@ -130,131 +130,19 @@ void DILIGENT_CALL_TYPE RenderDeviceMtlImpl::CreateTexture(const TextureDesc& Te
 
     try
     {
-        // Create Metal texture descriptor
-        MTLTextureDescriptor* mtlDesc = [[MTLTextureDescriptor alloc] init];
-        
-        // Set texture type
-        switch (TexDesc.Type)
-        {
-            case RESOURCE_DIM_TEX_1D:
-                mtlDesc.textureType = MTLTextureType1D;
-                break;
-            case RESOURCE_DIM_TEX_1D_ARRAY:
-                mtlDesc.textureType = MTLTextureType1DArray;
-                break;
-            case RESOURCE_DIM_TEX_2D:
-                mtlDesc.textureType = MTLTextureType2D;
-                break;
-            case RESOURCE_DIM_TEX_2D_ARRAY:
-                mtlDesc.textureType = MTLTextureType2DArray;
-                break;
-            case RESOURCE_DIM_TEX_3D:
-                mtlDesc.textureType = MTLTextureType3D;
-                break;
-            case RESOURCE_DIM_TEX_CUBE:
-                mtlDesc.textureType = MTLTextureTypeCube;
-                break;
-            case RESOURCE_DIM_TEX_CUBE_ARRAY:
-                mtlDesc.textureType = MTLTextureTypeCubeArray;
-                break;
-            default:
-                LOG_ERROR_AND_THROW("Unknown texture type");
-        }
-        
-        // Set pixel format
-        mtlDesc.pixelFormat = TexFormatToMtlPixelFormat(TexDesc.Format);
-        if (mtlDesc.pixelFormat == MTLPixelFormatInvalid)
+        // Validate texture format
+        MTLPixelFormat mtlFormat = TexFormatToMtlPixelFormat(TexDesc.Format);
+        if (mtlFormat == MTLPixelFormatInvalid)
         {
             LOG_ERROR_AND_THROW("Unsupported texture format: ", TexDesc.Format);
         }
         
-        // Set dimensions
-        mtlDesc.width = TexDesc.Width;
-        mtlDesc.height = (TexDesc.Type == RESOURCE_DIM_TEX_1D || TexDesc.Type == RESOURCE_DIM_TEX_1D_ARRAY) ? 1 : TexDesc.Height;
-        mtlDesc.depth = (TexDesc.Type == RESOURCE_DIM_TEX_3D) ? TexDesc.Depth : 1;
-        mtlDesc.mipmapLevelCount = TexDesc.MipLevels;
-        mtlDesc.sampleCount = TexDesc.SampleCount;
-        mtlDesc.arrayLength = (TexDesc.Type == RESOURCE_DIM_TEX_1D_ARRAY || 
-                               TexDesc.Type == RESOURCE_DIM_TEX_2D_ARRAY || 
-                               TexDesc.Type == RESOURCE_DIM_TEX_CUBE_ARRAY) ? TexDesc.ArraySize : 1;
-        
-        // Set usage
-        mtlDesc.usage = MTLTextureUsageUnknown;
-        if (TexDesc.BindFlags & BIND_RENDER_TARGET)
-            mtlDesc.usage |= MTLTextureUsageRenderTarget;
-        if (TexDesc.BindFlags & BIND_DEPTH_STENCIL)
-            mtlDesc.usage |= MTLTextureUsageRenderTarget;
-        if (TexDesc.BindFlags & BIND_SHADER_RESOURCE)
-            mtlDesc.usage |= MTLTextureUsageShaderRead;
-        if (TexDesc.BindFlags & BIND_UNORDERED_ACCESS)
-            mtlDesc.usage |= MTLTextureUsageShaderRead | MTLTextureUsageShaderWrite;
-        
-        // Set storage mode
-        if (TexDesc.Usage == USAGE_IMMUTABLE || TexDesc.Usage == USAGE_DEFAULT)
-        {
-            mtlDesc.storageMode = MTLStorageModePrivate;
-        }
-        else if (TexDesc.Usage == USAGE_DYNAMIC)
-        {
-            mtlDesc.storageMode = MTLStorageModeManaged;
-        }
-        else if (TexDesc.Usage == USAGE_STAGING)
-        {
-            mtlDesc.storageMode = MTLStorageModeShared;
-        }
-        else
-        {
-            mtlDesc.storageMode = MTLStorageModePrivate;
-        }
-        
-        // Create Metal texture
-        id<MTLTexture> mtlTexture = [m_mtlDevice newTextureWithDescriptor:mtlDesc];
-        if (mtlTexture == nil)
-        {
-            LOG_ERROR_AND_THROW("Failed to create Metal texture");
-        }
-        
-        // Set debug label
-        if (TexDesc.Name != nullptr)
-        {
-            mtlTexture.label = [NSString stringWithUTF8String:TexDesc.Name];
-        }
-        
-        // Upload initial data if provided
-        if (pTexData != nullptr && pTexData->pSubResources != nullptr)
-        {
-            for (Uint32 slice = 0; slice < pTexData->NumSubresources; ++slice)
-            {
-                const TextureSubResData& subResData = pTexData->pSubResources[slice];
-                
-                MTLRegion region;
-                if (TexDesc.Type == RESOURCE_DIM_TEX_3D)
-                {
-                    region = MTLRegionMake3D(0, 0, 0, TexDesc.Width, TexDesc.Height, TexDesc.Depth);
-                }
-                else if (TexDesc.Type == RESOURCE_DIM_TEX_1D || TexDesc.Type == RESOURCE_DIM_TEX_1D_ARRAY)
-                {
-                    region = MTLRegionMake1D(0, TexDesc.Width);
-                }
-                else
-                {
-                    region = MTLRegionMake2D(0, 0, TexDesc.Width, TexDesc.Height);
-                }
-                
-                [mtlTexture replaceRegion:region
-                          mipmapLevel:0
-                                slice:0
-                            withBytes:subResData.pData
-                          bytesPerRow:subResData.Stride
-                        bytesPerImage:subResData.DepthStride];
-            }
-        }
-        
-        // Create TextureMtlImpl wrapper
+        // Create TextureMtlImpl - it handles Metal texture creation and initial data upload
         TextureMtlImpl* pTextureMtl = NEW_RC_OBJ(m_TexObjAllocator, "TextureMtlImpl instance", TextureMtlImpl)
             (m_TexViewObjAllocator, this, TexDesc, pTexData);
         
         pTextureMtl->QueryInterface(IID_Texture, reinterpret_cast<IObject**>(ppTexture));
+        pTextureMtl->CreateDefaultViews();
         
         LOG_INFO_MESSAGE("Created Metal texture '", (TexDesc.Name ? TexDesc.Name : "<unnamed>"),
                         "' (", TexDesc.Width, "x", TexDesc.Height, ", format=", TexDesc.Format, ")");
@@ -390,7 +278,7 @@ void DILIGENT_CALL_TYPE RenderDeviceMtlImpl::CreatePipelineStateCache(const Pipe
 
     try
     {
-        PipelineStateCacheMtlImpl* pCacheMtl = NEW_RC_OBJ(m_BufObjAllocator, "PipelineStateCache object", PipelineStateCacheMtlImpl)(this, CreateInfo);
+    PipelineStateCacheMtlImpl* pCacheMtl = NEW_RC_OBJ(m_PSOCacheAllocator, "PipelineStateCache object", PipelineStateCacheMtlImpl)(this, CreateInfo);
         pCacheMtl->QueryInterface(IID_PipelineStateCache, reinterpret_cast<IObject**>(ppPSOCache));
     }
     catch (const std::exception& e)
@@ -411,8 +299,88 @@ void DILIGENT_CALL_TYPE RenderDeviceMtlImpl::CreateTextureFromMtlResource(id<MTL
                                                                            RESOURCE_STATE  InitialState,
                                                                            ITexture**      ppTexture)
 {
-    LOG_ERROR_MESSAGE("CreateTextureFromMtlResource is not implemented yet. Metal backend is under development.");
-    if (ppTexture) *ppTexture = nullptr;
+    if (ppTexture == nullptr)
+        return;
+    
+    *ppTexture = nullptr;
+    
+    if (mtlTexture == nil)
+    {
+        LOG_ERROR_MESSAGE("MTLTexture is null");
+        return;
+    }
+    
+    // Create texture description from the Metal texture
+    TextureDesc TexDesc;
+    TexDesc.Name = "Wrapped Metal Texture";
+    
+    // Determine texture type
+    switch (mtlTexture.textureType)
+    {
+        case MTLTextureType1D:
+            TexDesc.Type = RESOURCE_DIM_TEX_1D;
+            break;
+        case MTLTextureType1DArray:
+            TexDesc.Type = RESOURCE_DIM_TEX_1D_ARRAY;
+            break;
+        case MTLTextureType2D:
+            TexDesc.Type = RESOURCE_DIM_TEX_2D;
+            break;
+        case MTLTextureType2DArray:
+            TexDesc.Type = RESOURCE_DIM_TEX_2D_ARRAY;
+            break;
+        case MTLTextureType3D:
+            TexDesc.Type = RESOURCE_DIM_TEX_3D;
+            break;
+        case MTLTextureTypeCube:
+            TexDesc.Type = RESOURCE_DIM_TEX_CUBE;
+            break;
+        case MTLTextureTypeCubeArray:
+            TexDesc.Type = RESOURCE_DIM_TEX_CUBE_ARRAY;
+            break;
+        default:
+            LOG_ERROR_MESSAGE("Unknown Metal texture type");
+            return;
+    }
+    
+    TexDesc.Width = static_cast<Uint32>(mtlTexture.width);
+    TexDesc.Height = static_cast<Uint32>(mtlTexture.height);
+    TexDesc.Depth = static_cast<Uint32>(mtlTexture.depth);
+    TexDesc.MipLevels = static_cast<Uint32>(mtlTexture.mipmapLevelCount);
+    TexDesc.ArraySize = static_cast<Uint32>(mtlTexture.arrayLength);
+    TexDesc.SampleCount = static_cast<Uint32>(mtlTexture.sampleCount);
+    TexDesc.Format = MtlPixelFormatToTexFormat(mtlTexture.pixelFormat);
+    
+    // Determine bind flags from texture usage
+    TexDesc.BindFlags = BIND_NONE;
+    if (mtlTexture.usage & MTLTextureUsageShaderRead)
+        TexDesc.BindFlags |= BIND_SHADER_RESOURCE;
+    if (mtlTexture.usage & MTLTextureUsageShaderWrite)
+        TexDesc.BindFlags |= BIND_UNORDERED_ACCESS;
+    if (mtlTexture.usage & MTLTextureUsageRenderTarget)
+        TexDesc.BindFlags |= BIND_RENDER_TARGET;
+    if (mtlTexture.usage & MTLTextureUsagePixelFormatView)
+        TexDesc.BindFlags |= BIND_SHADER_RESOURCE;
+    
+    TexDesc.Usage = USAGE_DEFAULT;  // Wrapped textures use default usage
+    TexDesc.CPUAccessFlags = CPU_ACCESS_NONE;
+    
+    // Create the texture object (without creating a new Metal texture)
+    try
+    {
+        TextureMtlImpl* pTexMtl = NEW_RC_OBJ(m_TexObjAllocator, "Wrapped Metal texture", TextureMtlImpl)
+            (m_TexViewObjAllocator, this, TexDesc, static_cast<const TextureData*>(nullptr));
+        
+        // Set the existing Metal texture
+        pTexMtl->SetMtlTexture(mtlTexture);
+        
+        // Query the ITexture interface
+        pTexMtl->QueryInterface(IID_Texture, reinterpret_cast<IObject**>(ppTexture));
+    }
+    catch (const std::exception& e)
+    {
+        LOG_ERROR_MESSAGE("Failed to create wrapped Metal texture: ", e.what());
+    }
 }
 
 void DILIGENT_CALL_TYPE RenderDeviceMtlImpl::CreateBufferFromMtlResource(id<MTLBuffer>       mtlBuffer,

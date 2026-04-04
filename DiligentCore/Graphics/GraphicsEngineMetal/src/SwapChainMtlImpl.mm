@@ -237,18 +237,55 @@ bool SwapChainMtlImpl::AcquireNextDrawable()
             return false;
         }
         
-        // Create back buffer texture view
-        TextureDesc BackBufferDesc;
-        BackBufferDesc.Name      = "Back buffer";
-        BackBufferDesc.Type      = RESOURCE_DIM_TEX_2D;
-        BackBufferDesc.Width     = m_SwapChainDesc.Width;
-        BackBufferDesc.Height    = m_SwapChainDesc.Height;
-        BackBufferDesc.Format    = m_SwapChainDesc.ColorBufferFormat;
-        BackBufferDesc.BindFlags = BIND_RENDER_TARGET;
-        BackBufferDesc.Usage     = USAGE_DEFAULT;
+        // Get the drawable texture
+        id<MTLTexture> drawableTexture = m_CurrentDrawable.texture;
+        if (drawableTexture == nil)
+        {
+            LOG_ERROR_MESSAGE("Drawable has no texture");
+            return false;
+        }
         
-        // For now, we'll skip wrapping the drawable texture
-        // This is a simplified implementation
+        // Create a TextureMtlImpl that wraps the drawable texture
+        
+        // Convert the Metal pixel format to Diligent format
+        TEXTURE_FORMAT drawableFormat = MtlPixelFormatToTexFormat(drawableTexture.pixelFormat);
+        LOG_INFO_MESSAGE("Drawable texture format: Metal=", static_cast<int>(drawableTexture.pixelFormat), 
+                        " Diligent=", static_cast<int>(drawableFormat));
+        
+        // Use CreateTextureFromMtlResource to wrap the drawable texture
+        RenderDeviceMtlImpl* pDeviceMtl = m_pRenderDevice.RawPtr<RenderDeviceMtlImpl>();
+        
+        RefCntAutoPtr<ITexture> pBackBuffer;
+        pDeviceMtl->CreateTextureFromMtlResource(drawableTexture, RESOURCE_STATE_RENDER_TARGET, &pBackBuffer);
+        
+        if (pBackBuffer == nullptr)
+        {
+            LOG_ERROR_MESSAGE("Failed to create back buffer texture wrapper from drawable");
+            return false;
+        }
+        
+        m_pBackBufferTexture = RefCntAutoPtr<ITextureMtl>(pBackBuffer, IID_TextureMtl);
+        if (m_pBackBufferTexture == nullptr)
+        {
+            LOG_ERROR_MESSAGE("Failed to query ITextureMtl interface from back buffer");
+            return false;
+        }
+        
+        // Create render target view
+        TextureViewDesc RTVDesc;
+        RTVDesc.ViewType = TEXTURE_VIEW_RENDER_TARGET;
+        RTVDesc.Format   = drawableFormat;  // Use the actual drawable format
+        
+        RefCntAutoPtr<ITextureView> pRTV;
+        m_pBackBufferTexture->CreateView(RTVDesc, &pRTV);
+        m_pBackBufferRTV = RefCntAutoPtr<ITextureViewMtl>(pRTV, IID_TextureViewMtl);
+        
+        if (m_pBackBufferRTV == nullptr)
+        {
+            LOG_ERROR_MESSAGE("Failed to create back buffer RTV");
+            return false;
+        }
+        
         LOG_INFO_MESSAGE("Acquired next drawable");
     }
     

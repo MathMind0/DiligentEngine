@@ -47,7 +47,13 @@ PipelineStateMtlImpl::PipelineStateMtlImpl(IReferenceCounters*                  
 
 PipelineStateMtlImpl::~PipelineStateMtlImpl()
 {
+    Destruct();
+}
+
+void PipelineStateMtlImpl::Destruct()
+{
     // Metal objects are reference-counted and will be released automatically
+    TPipelineStateBase::Destruct();
 }
 
 void PipelineStateMtlImpl::InitializePipeline(const GraphicsPipelineStateCreateInfo& CreateInfo)

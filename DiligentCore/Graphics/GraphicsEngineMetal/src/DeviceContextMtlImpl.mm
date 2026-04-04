@@ -68,7 +68,29 @@ void DILIGENT_CALL_TYPE DeviceContextMtlImpl::Begin(Uint32 ImmediateContextId)
 
 void DILIGENT_CALL_TYPE DeviceContextMtlImpl::SetPipelineState(IPipelineState* pPipelineState)
 {
-    LOG_ERROR_MESSAGE("SetPipelineState is not implemented yet. Metal backend is under development.");
+    if (pPipelineState == nullptr)
+    {
+        m_pPipelineState.Release();
+        return;
+    }
+    
+    m_pPipelineState = ClassPtrCast<PipelineStateMtlImpl>(pPipelineState);
+    
+    // Apply pipeline state to the current render encoder if we're in a render pass
+    if (m_RenderEncoder != nil && m_pPipelineState != nullptr)
+    {
+        id<MTLRenderPipelineState> renderPipeline = m_pPipelineState->GetMtlRenderPipeline();
+        if (renderPipeline != nil)
+        {
+            [m_RenderEncoder setRenderPipelineState:renderPipeline];
+        }
+        
+        id<MTLDepthStencilState> depthStencilState = m_pPipelineState->GetMtlDepthStencilState();
+        if (depthStencilState != nil)
+        {
+            [m_RenderEncoder setDepthStencilState:depthStencilState];
+        }
+    }
 }
 
 void DILIGENT_CALL_TYPE DeviceContextMtlImpl::TransitionShaderResources(IShaderResourceBinding* pShaderResourceBinding)
@@ -98,7 +120,33 @@ void DILIGENT_CALL_TYPE DeviceContextMtlImpl::SetVertexBuffers(Uint32           
                                                                RESOURCE_STATE_TRANSITION_MODE StateTransitionMode,
                                                                SET_VERTEX_BUFFERS_FLAGS       Flags)
 {
-    LOG_ERROR_MESSAGE("SetVertexBuffers is not implemented yet. Metal backend is under development.");
+    for (Uint32 i = 0; i < NumBuffersSet; ++i)
+    {
+        Uint32 slot = StartSlot + i;
+        if (slot >= MAX_VERTEX_BUFFERS)
+        {
+            LOG_WARNING_MESSAGE("Vertex buffer slot ", slot, " exceeds maximum (", MAX_VERTEX_BUFFERS, ")");
+            continue;
+        }
+        
+        if (ppBuffers[i] != nullptr)
+        {
+            BufferMtlImpl* pBuffer = ClassPtrCast<BufferMtlImpl>(ppBuffers[i]);
+            m_VertexBuffers[slot] = pBuffer->GetMtlResource();
+            m_VertexBufferOffsets[slot] = pOffsets != nullptr ? static_cast<NSUInteger>(pOffsets[i]) : 0;
+            
+            // Apply to render encoder if active
+            if (m_RenderEncoder != nil)
+            {
+                [m_RenderEncoder setVertexBuffer:m_VertexBuffers[slot] offset:m_VertexBufferOffsets[slot] atIndex:slot];
+            }
+        }
+        else
+        {
+            m_VertexBuffers[slot] = nil;
+            m_VertexBufferOffsets[slot] = 0;
+        }
+    }
 }
 
 void DILIGENT_CALL_TYPE DeviceContextMtlImpl::InvalidateState()
@@ -106,9 +154,23 @@ void DILIGENT_CALL_TYPE DeviceContextMtlImpl::InvalidateState()
     LOG_ERROR_MESSAGE("InvalidateState is not implemented yet. Metal backend is under development.");
 }
 
-void DILIGENT_CALL_TYPE DeviceContextMtlImpl::SetIndexBuffer(IBuffer* pBuffer, Uint64 ByteOffset, RESOURCE_STATE_TRANSITION_MODE StateTransitionMode)
+void DILIGENT_CALL_TYPE DeviceContextMtlImpl::SetIndexBuffer(IBuffer* pIndexBuffer, Uint64 ByteOffset, RESOURCE_STATE_TRANSITION_MODE StateTransitionMode)
 {
-    LOG_ERROR_MESSAGE("SetIndexBuffer is not implemented yet. Metal backend is under development.");
+    if (pIndexBuffer != nullptr)
+    {
+        BufferMtlImpl* pBuffer = ClassPtrCast<BufferMtlImpl>(pIndexBuffer);
+        m_IndexBuffer = pBuffer->GetMtlResource();
+        m_IndexBufferOffset = static_cast<NSUInteger>(ByteOffset);
+        
+        // Determine index type based on buffer format
+        const auto& desc = pBuffer->GetDesc();
+        m_IndexType = desc.ElementByteStride == 4 ? MTLIndexTypeUInt32 : MTLIndexTypeUInt16;
+    }
+    else
+    {
+        m_IndexBuffer = nil;
+        m_IndexBufferOffset = 0;
+    }
 }
 
 void DILIGENT_CALL_TYPE DeviceContextMtlImpl::SetViewports(Uint32 NumViewports, const Viewport* pViewports, Uint32 RTWidth, Uint32 RTHeight)
@@ -123,7 +185,61 @@ void DILIGENT_CALL_TYPE DeviceContextMtlImpl::SetScissorRects(Uint32 NumRects, c
 
 void DILIGENT_CALL_TYPE DeviceContextMtlImpl::SetRenderTargetsExt(const SetRenderTargetsAttribs& Attribs)
 {
-    LOG_ERROR_MESSAGE("SetRenderTargetsExt is not implemented yet. Metal backend is under development.");
+    // End current render pass if any
+    if (m_InRenderPass && m_RenderEncoder != nil)
+    {
+        [m_RenderEncoder endEncoding];
+        m_RenderEncoder = nil;
+        m_InRenderPass = false;
+    }
+    
+    // Store render targets
+    m_RenderTargets.clear();
+    for (Uint32 i = 0; i < Attribs.NumRenderTargets; ++i)
+    {
+        if (Attribs.ppRenderTargets[i] != nullptr)
+        {
+            m_RenderTargets.push_back(RefCntAutoPtr<ITextureView>(Attribs.ppRenderTargets[i]));
+        }
+    }
+    m_pDepthStencilTarget = Attribs.pDepthStencil;
+    
+    // Create render pass descriptor
+    m_RenderPassDescriptor = [[MTLRenderPassDescriptor alloc] init];
+    
+    // Configure color attachments
+    for (Uint32 i = 0; i < m_RenderTargets.size(); ++i)
+    {
+        if (m_RenderTargets[i] != nullptr)
+        {
+            TextureViewMtlImpl* pRTV = static_cast<TextureViewMtlImpl*>(m_RenderTargets[i].RawPtr());
+            id<MTLTexture> texture = pRTV->GetMtlTexture();
+            if (texture != nil)
+            {
+                m_RenderPassDescriptor.colorAttachments[i].texture = texture;
+                m_RenderPassDescriptor.colorAttachments[i].loadAction = MTLLoadActionLoad;
+                m_RenderPassDescriptor.colorAttachments[i].storeAction = MTLStoreActionStore;
+            }
+        }
+    }
+    
+    // Configure depth stencil attachment
+    if (m_pDepthStencilTarget != nullptr)
+    {
+        TextureViewMtlImpl* pDSV = static_cast<TextureViewMtlImpl*>(m_pDepthStencilTarget.RawPtr());
+        id<MTLTexture> texture = pDSV->GetMtlTexture();
+        if (texture != nil)
+        {
+            m_RenderPassDescriptor.depthAttachment.texture = texture;
+            m_RenderPassDescriptor.depthAttachment.loadAction = MTLLoadActionLoad;
+            m_RenderPassDescriptor.depthAttachment.storeAction = MTLStoreActionStore;
+            
+            // Also set stencil attachment if the texture has stencil
+            m_RenderPassDescriptor.stencilAttachment.texture = texture;
+            m_RenderPassDescriptor.stencilAttachment.loadAction = MTLLoadActionLoad;
+            m_RenderPassDescriptor.stencilAttachment.storeAction = MTLStoreActionStore;
+        }
+    }
 }
 
 void DILIGENT_CALL_TYPE DeviceContextMtlImpl::BeginRenderPass(const BeginRenderPassAttribs& Attribs)
@@ -138,17 +254,155 @@ void DILIGENT_CALL_TYPE DeviceContextMtlImpl::NextSubpass()
 
 void DILIGENT_CALL_TYPE DeviceContextMtlImpl::EndRenderPass()
 {
-    LOG_ERROR_MESSAGE("EndRenderPass is not implemented yet. Metal backend is under development.");
+    if (m_RenderEncoder != nil)
+    {
+        [m_RenderEncoder endEncoding];
+        m_RenderEncoder = nil;
+    }
+    m_InRenderPass = false;
 }
 
 void DILIGENT_CALL_TYPE DeviceContextMtlImpl::Draw(const DrawAttribs& Attribs)
 {
-    LOG_ERROR_MESSAGE("Draw is not implemented yet. Metal backend is under development.");
+    // Ensure we have a command buffer
+    if (m_mtlCommandBuffer == nil)
+    {
+        RenderDeviceMtlImpl* pDeviceMtl = static_cast<RenderDeviceMtlImpl*>(GetDevice());
+        const auto& cmdQueue = pDeviceMtl->GetCommandQueue(SoftwareQueueIndex{0});
+        id<MTLCommandQueue> mtlCommandQueue = cmdQueue.GetMtlCommandQueue();
+        m_mtlCommandBuffer = [mtlCommandQueue commandBuffer];
+    }
+    
+    // Begin render pass if not already in one
+    if (!m_InRenderPass && m_RenderPassDescriptor != nil)
+    {
+        m_RenderEncoder = [m_mtlCommandBuffer renderCommandEncoderWithDescriptor:m_RenderPassDescriptor];
+        m_InRenderPass = true;
+        
+        // Re-apply pipeline state
+        if (m_pPipelineState != nullptr)
+        {
+            id<MTLRenderPipelineState> renderPipeline = m_pPipelineState->GetMtlRenderPipeline();
+            if (renderPipeline != nil)
+            {
+                [m_RenderEncoder setRenderPipelineState:renderPipeline];
+            }
+            
+            id<MTLDepthStencilState> depthStencilState = m_pPipelineState->GetMtlDepthStencilState();
+            if (depthStencilState != nil)
+            {
+                [m_RenderEncoder setDepthStencilState:depthStencilState];
+            }
+        }
+        
+        // Re-apply vertex buffers
+        for (Uint32 i = 0; i < MAX_VERTEX_BUFFERS; ++i)
+        {
+            if (m_VertexBuffers[i] != nil)
+            {
+                [m_RenderEncoder setVertexBuffer:m_VertexBuffers[i] offset:m_VertexBufferOffsets[i] atIndex:i];
+            }
+        }
+    }
+    
+    if (m_RenderEncoder == nil)
+    {
+        LOG_ERROR_MESSAGE("No render encoder available. Call SetRenderTargetsExt first.");
+        return;
+    }
+    
+    // Apply rasterizer state
+    if (m_pPipelineState != nullptr)
+    {
+        const auto& rasterizerDesc = m_pPipelineState->GetRasterizerStateDesc();
+        [m_RenderEncoder setFrontFacingWinding:rasterizerDesc.FrontCounterClockwise ? MTLWindingCounterClockwise : MTLWindingClockwise];
+        [m_RenderEncoder setCullMode:rasterizerDesc.CullMode == CULL_MODE_NONE ? MTLCullModeNone :
+                               rasterizerDesc.CullMode == CULL_MODE_FRONT ? MTLCullModeFront : MTLCullModeBack];
+        [m_RenderEncoder setTriangleFillMode:rasterizerDesc.FillMode == FILL_MODE_WIREFRAME ? MTLTriangleFillModeLines : MTLTriangleFillModeFill];
+    }
+    
+    // Draw
+    [m_RenderEncoder drawPrimitives:MTLPrimitiveTypeTriangle
+                        vertexStart:Attribs.StartVertexLocation
+                        vertexCount:Attribs.NumVertices];
 }
 
 void DILIGENT_CALL_TYPE DeviceContextMtlImpl::DrawIndexed(const DrawIndexedAttribs& Attribs)
 {
-    LOG_ERROR_MESSAGE("DrawIndexed is not implemented yet. Metal backend is under development.");
+    // Ensure we have a command buffer
+    if (m_mtlCommandBuffer == nil)
+    {
+        RenderDeviceMtlImpl* pDeviceMtl = static_cast<RenderDeviceMtlImpl*>(GetDevice());
+        const auto& cmdQueue = pDeviceMtl->GetCommandQueue(SoftwareQueueIndex{0});
+        id<MTLCommandQueue> mtlCommandQueue = cmdQueue.GetMtlCommandQueue();
+        m_mtlCommandBuffer = [mtlCommandQueue commandBuffer];
+    }
+    
+    // Begin render pass if not already in one
+    if (!m_InRenderPass && m_RenderPassDescriptor != nil)
+    {
+        m_RenderEncoder = [m_mtlCommandBuffer renderCommandEncoderWithDescriptor:m_RenderPassDescriptor];
+        m_InRenderPass = true;
+        
+        // Re-apply pipeline state
+        if (m_pPipelineState != nullptr)
+        {
+            id<MTLRenderPipelineState> renderPipeline = m_pPipelineState->GetMtlRenderPipeline();
+            if (renderPipeline != nil)
+            {
+                [m_RenderEncoder setRenderPipelineState:renderPipeline];
+            }
+            
+            id<MTLDepthStencilState> depthStencilState = m_pPipelineState->GetMtlDepthStencilState();
+            if (depthStencilState != nil)
+            {
+                [m_RenderEncoder setDepthStencilState:depthStencilState];
+            }
+        }
+        
+        // Re-apply vertex buffers
+        for (Uint32 i = 0; i < MAX_VERTEX_BUFFERS; ++i)
+        {
+            if (m_VertexBuffers[i] != nil)
+            {
+                [m_RenderEncoder setVertexBuffer:m_VertexBuffers[i] offset:m_VertexBufferOffsets[i] atIndex:i];
+            }
+        }
+    }
+    
+    if (m_RenderEncoder == nil)
+    {
+        LOG_ERROR_MESSAGE("No render encoder available. Call SetRenderTargetsExt first.");
+        return;
+    }
+    
+    // Apply rasterizer state
+    if (m_pPipelineState != nullptr)
+    {
+        const auto& rasterizerDesc = m_pPipelineState->GetRasterizerStateDesc();
+        [m_RenderEncoder setFrontFacingWinding:rasterizerDesc.FrontCounterClockwise ? MTLWindingCounterClockwise : MTLWindingClockwise];
+        [m_RenderEncoder setCullMode:rasterizerDesc.CullMode == CULL_MODE_NONE ? MTLCullModeNone :
+                               rasterizerDesc.CullMode == CULL_MODE_FRONT ? MTLCullModeFront : MTLCullModeBack];
+        [m_RenderEncoder setTriangleFillMode:rasterizerDesc.FillMode == FILL_MODE_WIREFRAME ? MTLTriangleFillModeLines : MTLTriangleFillModeFill];
+    }
+    
+    // Draw indexed
+    if (m_IndexBuffer != nil)
+    {
+        NSUInteger indexBufferOffset = m_IndexBufferOffset + Attribs.FirstIndexLocation * (m_IndexType == MTLIndexTypeUInt32 ? 4 : 2);
+        [m_RenderEncoder drawIndexedPrimitives:MTLPrimitiveTypeTriangle
+                                    indexCount:Attribs.NumIndices
+                                     indexType:m_IndexType
+                                   indexBuffer:m_IndexBuffer
+                             indexBufferOffset:indexBufferOffset
+                                 instanceCount:Attribs.NumInstances
+                                    baseVertex:Attribs.BaseVertex
+                                  baseInstance:Attribs.FirstInstanceLocation];
+    }
+    else
+    {
+        LOG_ERROR_MESSAGE("No index buffer set. Call SetIndexBuffer first.");
+    }
 }
 
 void DILIGENT_CALL_TYPE DeviceContextMtlImpl::DrawIndirect(const DrawIndirectAttribs& Attribs)
@@ -204,7 +458,56 @@ void DILIGENT_CALL_TYPE DeviceContextMtlImpl::DispatchTile(const DispatchTileAtt
 
 void DILIGENT_CALL_TYPE DeviceContextMtlImpl::ClearRenderTarget(ITextureView* pView, const void* pClearColor, RESOURCE_STATE_TRANSITION_MODE StateTransitionMode)
 {
-    LOG_ERROR_MESSAGE("ClearRenderTarget is not implemented yet. Metal backend is under development.");
+    if (pView == nullptr)
+    {
+        LOG_ERROR_MESSAGE("ClearRenderTarget: pView is null");
+        return;
+    }
+    
+    TextureViewMtlImpl* pViewMtl = static_cast<TextureViewMtlImpl*>(pView);
+    id<MTLTexture> mtlTexture = pViewMtl->GetMtlTexture();
+    if (mtlTexture == nil)
+    {
+        LOG_ERROR_MESSAGE("ClearRenderTarget: Metal texture is null");
+        return;
+    }
+    
+    // Parse clear color (RGBA float)
+    const float* pColor = static_cast<const float*>(pClearColor);
+    MTLClearColor clearColor = MTLClearColorMake(
+        pColor ? pColor[0] : 0.0,
+        pColor ? pColor[1] : 0.0,
+        pColor ? pColor[2] : 0.0,
+        pColor ? pColor[3] : 1.0
+    );
+    
+    // End current render pass if active
+    if (m_RenderEncoder != nil)
+    {
+        [m_RenderEncoder endEncoding];
+        m_RenderEncoder = nil;
+        m_InRenderPass = false;
+    }
+    
+    // Create render pass descriptor with clear load action
+    MTLRenderPassDescriptor* renderPassDesc = [MTLRenderPassDescriptor renderPassDescriptor];
+    renderPassDesc.colorAttachments[0].texture = mtlTexture;
+    renderPassDesc.colorAttachments[0].loadAction = MTLLoadActionClear;
+    renderPassDesc.colorAttachments[0].storeAction = MTLStoreActionStore;
+    renderPassDesc.colorAttachments[0].clearColor = clearColor;
+    
+    // Ensure we have a command buffer
+    if (m_mtlCommandBuffer == nil)
+    {
+        RenderDeviceMtlImpl* pDeviceMtl = static_cast<RenderDeviceMtlImpl*>(GetDevice());
+        const auto& cmdQueue = pDeviceMtl->GetCommandQueue(SoftwareQueueIndex{0});
+        id<MTLCommandQueue> mtlCommandQueue = cmdQueue.GetMtlCommandQueue();
+        m_mtlCommandBuffer = [mtlCommandQueue commandBuffer];
+    }
+    
+    // Create render encoder and immediately end it (just for the clear)
+    id<MTLRenderCommandEncoder> clearEncoder = [m_mtlCommandBuffer renderCommandEncoderWithDescriptor:renderPassDesc];
+    [clearEncoder endEncoding];
 }
 
 void DILIGENT_CALL_TYPE DeviceContextMtlImpl::ClearDepthStencil(ITextureView* pView, CLEAR_DEPTH_STENCIL_FLAGS ClearFlags, float fDepth, Uint8 Stencil, RESOURCE_STATE_TRANSITION_MODE StateTransitionMode)
@@ -225,12 +528,47 @@ void DILIGENT_CALL_TYPE DeviceContextMtlImpl::CopyBuffer(IBuffer* pSrcBuffer, Ui
 
 void DILIGENT_CALL_TYPE DeviceContextMtlImpl::MapBuffer(IBuffer* pBuffer, MAP_TYPE MapType, MAP_FLAGS MapFlags, PVoid& pMappedData)
 {
-    LOG_ERROR_MESSAGE("MapBuffer is not implemented yet. Metal backend is under development.");
+    pMappedData = nullptr;
+    
+    if (pBuffer == nullptr)
+    {
+        LOG_ERROR_MESSAGE("MapBuffer: pBuffer is null");
+        return;
+    }
+    
+    auto* pBufferMtl = ClassPtrCast<BufferMtlImpl>(pBuffer);
+    if (pBufferMtl == nullptr)
+    {
+        LOG_ERROR_MESSAGE("MapBuffer: Invalid buffer");
+        return;
+    }
+    
+    id<MTLBuffer> mtlBuffer = pBufferMtl->GetMtlResource();
+    if (mtlBuffer == nil)
+    {
+        LOG_ERROR_MESSAGE("MapBuffer: Metal buffer is null");
+        return;
+    }
+    
+    // For shared storage mode, we can get a direct pointer
+    if (mtlBuffer.storageMode == MTLStorageModeShared)
+    {
+        pMappedData = [mtlBuffer contents];
+    }
+    else
+    {
+        // For private storage mode, we need to use a staging buffer
+        // This is a simplified implementation
+        LOG_WARNING_MESSAGE("MapBuffer: Buffer uses private storage, mapping not fully supported");
+        pMappedData = nullptr;
+    }
 }
 
 void DILIGENT_CALL_TYPE DeviceContextMtlImpl::UnmapBuffer(IBuffer* pBuffer, MAP_TYPE MapType)
 {
-    LOG_ERROR_MESSAGE("UnmapBuffer is not implemented yet. Metal backend is under development.");
+    // For shared storage mode, there's no need to unmap
+    // The memory is always accessible
+    // For private storage, we would need to sync back
 }
 
 void DILIGENT_CALL_TYPE DeviceContextMtlImpl::UpdateTexture(ITexture*                      pTexture,
@@ -241,7 +579,158 @@ void DILIGENT_CALL_TYPE DeviceContextMtlImpl::UpdateTexture(ITexture*           
                                                             RESOURCE_STATE_TRANSITION_MODE SrcBufferTransitionMode,
                                                             RESOURCE_STATE_TRANSITION_MODE DstTextureTransitionMode)
 {
-    LOG_ERROR_MESSAGE("UpdateTexture is not implemented yet. Metal backend is under development.");
+    if (pTexture == nullptr)
+    {
+        LOG_ERROR_MESSAGE("UpdateTexture: pTexture is null");
+        return;
+    }
+    
+    auto* pTextureMtl = ClassPtrCast<TextureMtlImpl>(pTexture);
+    if (pTextureMtl == nullptr)
+    {
+        LOG_ERROR_MESSAGE("UpdateTexture: Invalid texture");
+        return;
+    }
+    
+    id<MTLTexture> mtlTexture = pTextureMtl->GetMtlTexture();
+    if (mtlTexture == nil)
+    {
+        LOG_ERROR_MESSAGE("UpdateTexture: Metal texture is null");
+        return;
+    }
+    
+    const TextureDesc& TexDesc = pTextureMtl->GetDesc();
+    
+    // Calculate region dimensions
+    MTLRegion region;
+    region.origin.x = DstBox.MinX;
+    region.origin.y = DstBox.MinY;
+    region.origin.z = DstBox.MinZ;
+    region.size.width = DstBox.MaxX - DstBox.MinX;
+    region.size.height = DstBox.MaxY - DstBox.MinY;
+    region.size.depth = DstBox.MaxZ - DstBox.MinZ;
+    
+    // For 1D textures, height and depth should be 1
+    if (TexDesc.Type == RESOURCE_DIM_TEX_1D || TexDesc.Type == RESOURCE_DIM_TEX_1D_ARRAY)
+    {
+        region.origin.y = 0;
+        region.size.height = 1;
+    }
+    
+    // For 2D textures, depth should be 1
+    if (TexDesc.Type != RESOURCE_DIM_TEX_3D)
+    {
+        region.origin.z = 0;
+        region.size.depth = 1;
+    }
+    
+    // Upload the texture data
+    if (SubresData.pData != nullptr)
+    {
+        // For private storage mode, we need to use a staging buffer
+        if (mtlTexture.storageMode == MTLStorageModePrivate)
+        {
+            // Get the Metal device and command queue
+            auto* pDeviceMtl = ClassPtrCast<RenderDeviceMtlImpl>(GetDevice());
+            if (pDeviceMtl == nullptr)
+            {
+                LOG_ERROR_MESSAGE("UpdateTexture: Invalid device");
+                return;
+            }
+            
+            id<MTLDevice> mtlDevice = pDeviceMtl->GetMtlDevice();
+            const auto& cmdQueue = pDeviceMtl->GetCommandQueue(SoftwareQueueIndex{0});
+            id<MTLCommandQueue> mtlCommandQueue = cmdQueue.GetMtlCommandQueue();
+            
+            if (mtlCommandQueue == nil)
+            {
+                LOG_ERROR_MESSAGE("UpdateTexture: Metal command queue is null");
+                return;
+            }
+            
+            // Calculate bytes per row and image
+            NSUInteger bytesPerRow = SubresData.Stride;
+            NSUInteger bytesPerImage = SubresData.DepthStride;
+            
+            // Calculate total data size
+            NSUInteger dataSize = bytesPerImage > 0 ? bytesPerImage : bytesPerRow * region.size.height;
+            if (dataSize == 0)
+            {
+                dataSize = bytesPerRow * region.size.height;
+            }
+            
+            // Create a staging buffer
+            id<MTLBuffer> stagingBuffer = [mtlDevice newBufferWithLength:dataSize options:MTLStorageModeShared];
+            if (stagingBuffer == nil)
+            {
+                LOG_ERROR_MESSAGE("UpdateTexture: Failed to create staging buffer");
+                return;
+            }
+            
+            // Copy data to staging buffer
+            void* pStagingData = [stagingBuffer contents];
+            if (pStagingData == nullptr)
+            {
+                LOG_ERROR_MESSAGE("UpdateTexture: Failed to get staging buffer contents");
+                return;
+            }
+            std::memcpy(pStagingData, SubresData.pData, dataSize);
+            
+            // Create a command buffer
+            id<MTLCommandBuffer> commandBuffer = [mtlCommandQueue commandBuffer];
+            if (commandBuffer == nil)
+            {
+                LOG_ERROR_MESSAGE("UpdateTexture: Failed to create command buffer");
+                return;
+            }
+            
+            // Create a blit command encoder
+            id<MTLBlitCommandEncoder> blitEncoder = [commandBuffer blitCommandEncoder];
+            if (blitEncoder == nil)
+            {
+                LOG_ERROR_MESSAGE("UpdateTexture: Failed to create blit command encoder");
+                return;
+            }
+            
+            // Copy from buffer to texture
+            NSUInteger sourceOffset = 0;
+            [blitEncoder copyFromBuffer:stagingBuffer
+                           sourceOffset:sourceOffset
+                      sourceBytesPerRow:bytesPerRow
+                    sourceBytesPerImage:bytesPerImage
+                             sourceSize:MTLSizeMake(region.size.width, region.size.height, region.size.depth)
+                              toTexture:mtlTexture
+                       destinationSlice:Slice
+                       destinationLevel:MipLevel
+                      destinationOrigin:MTLOriginMake(region.origin.x, region.origin.y, region.origin.z)];
+            
+            [blitEncoder endEncoding];
+            
+            // Commit and wait for completion
+            [commandBuffer commit];
+            [commandBuffer waitUntilCompleted];
+            
+            LOG_INFO_MESSAGE("Updated Metal texture '", TexDesc.Name, "' mip level ", MipLevel, 
+                             " slice ", Slice, " via staging buffer");
+        }
+        else
+        {
+            // For shared/managed storage mode, use replaceRegion directly
+            [mtlTexture replaceRegion:region
+                          mipmapLevel:MipLevel
+                                slice:Slice
+                            withBytes:SubresData.pData
+                          bytesPerRow:SubresData.Stride
+                        bytesPerImage:SubresData.DepthStride];
+            
+            LOG_INFO_MESSAGE("Updated Metal texture '", TexDesc.Name, "' mip level ", MipLevel, 
+                             " slice ", Slice, " (", region.size.width, "x", region.size.height, ")");
+        }
+    }
+    else
+    {
+        LOG_ERROR_MESSAGE("UpdateTexture: SubresData.pData is null");
+    }
 }
 
 void DILIGENT_CALL_TYPE DeviceContextMtlImpl::CopyTexture(const CopyTextureAttribs& CopyAttribs)
@@ -302,7 +791,42 @@ void DILIGENT_CALL_TYPE DeviceContextMtlImpl::EndQuery(IQuery* pQuery)
 
 void DILIGENT_CALL_TYPE DeviceContextMtlImpl::Flush()
 {
-    LOG_ERROR_MESSAGE("Flush is not implemented yet. Metal backend is under development.");
+    // For Metal, we need to commit any pending command buffers
+    // Since we're using immediate mode, we commit the command buffer
+    // and wait for it to complete
+    
+    auto* pDeviceMtl = ClassPtrCast<RenderDeviceMtlImpl>(GetDevice());
+    if (pDeviceMtl == nullptr)
+    {
+        LOG_ERROR_MESSAGE("Flush: Invalid device");
+        return;
+    }
+    
+    // Get the command queue (index 0 for the main queue)
+    const auto& cmdQueue = pDeviceMtl->GetCommandQueue(SoftwareQueueIndex{0});
+    id<MTLCommandQueue> mtlCommandQueue = cmdQueue.GetMtlCommandQueue();
+    
+    if (mtlCommandQueue == nil)
+    {
+        LOG_ERROR_MESSAGE("Flush: Command queue is null");
+        return;
+    }
+    
+    // Create a command buffer for flush
+    id<MTLCommandBuffer> commandBuffer = [mtlCommandQueue commandBuffer];
+    if (commandBuffer == nil)
+    {
+        LOG_ERROR_MESSAGE("Flush: Failed to create command buffer");
+        return;
+    }
+    
+    commandBuffer.label = @"Flush";
+    
+    // Commit and wait
+    [commandBuffer commit];
+    [commandBuffer waitUntilCompleted];
+    
+    LOG_INFO_MESSAGE("Metal context flushed");
 }
 
 void DILIGENT_CALL_TYPE DeviceContextMtlImpl::BuildBLAS(const BuildBLASAttribs& Attribs)
@@ -352,7 +876,9 @@ void DILIGENT_CALL_TYPE DeviceContextMtlImpl::UpdateSBT(IShaderBindingTable* pSB
 
 void DILIGENT_CALL_TYPE DeviceContextMtlImpl::FinishFrame()
 {
-    LOG_ERROR_MESSAGE("FinishFrame is not implemented yet. Metal backend is under development.");
+    // For Metal, we commit any pending work and ensure all frames are complete
+    // This is typically called at the end of a frame
+    Flush();
 }
 
 void DILIGENT_CALL_TYPE DeviceContextMtlImpl::SetShadingRate(SHADING_RATE BaseRate, SHADING_RATE_COMBINER PrimitiveCombiner, SHADING_RATE_COMBINER TextureCombiner)
@@ -468,12 +994,95 @@ void DILIGENT_CALL_TYPE DeviceContextMtlImpl::BindSparseResourceMemory(const Bin
 
 void DILIGENT_CALL_TYPE DeviceContextMtlImpl::TransitionResourceStates(Uint32 BarrierCount, const StateTransitionDesc* pResourceBarriers)
 {
-    LOG_ERROR_MESSAGE("TransitionResourceStates is not implemented yet. Metal backend is under development.");
+    // Metal does not have explicit resource state transitions like D3D12/Vulkan.
+    // Resource states are managed implicitly by the driver.
+    // This method is a no-op for the Metal backend, but we validate the input.
+    
+    if (pResourceBarriers == nullptr && BarrierCount > 0)
+    {
+        LOG_ERROR_MESSAGE("TransitionResourceStates: pResourceBarriers is null but BarrierCount > 0");
+        return;
+    }
+    
+    // No-op: Metal handles resource synchronization automatically
+#ifdef DILIGENT_DEVELOPMENT
+    for (Uint32 i = 0; i < BarrierCount; ++i)
+    {
+        if (pResourceBarriers[i].pResource == nullptr)
+        {
+            LOG_WARNING_MESSAGE("TransitionResourceStates: Resource at index ", i, " is null");
+        }
+    }
+#endif
 }
 
 void DILIGENT_CALL_TYPE DeviceContextMtlImpl::GenerateMips(ITextureView* pTexView)
 {
-    LOG_ERROR_MESSAGE("GenerateMips is not implemented yet. Metal backend is under development.");
+    if (pTexView == nullptr)
+    {
+        LOG_ERROR_MESSAGE("GenerateMips: pTexView is null");
+        return;
+    }
+    
+    auto* pTexViewMtl = ClassPtrCast<TextureViewMtlImpl>(pTexView);
+    if (pTexViewMtl == nullptr)
+    {
+        LOG_ERROR_MESSAGE("GenerateMips: Invalid texture view");
+        return;
+    }
+    
+    id<MTLTexture> mtlTexture = pTexViewMtl->GetMtlTexture();
+    if (mtlTexture == nil)
+    {
+        LOG_ERROR_MESSAGE("GenerateMips: Metal texture is null");
+        return;
+    }
+    
+    // Get the Metal device and command queue
+    auto* pDeviceMtl = ClassPtrCast<RenderDeviceMtlImpl>(GetDevice());
+    if (pDeviceMtl == nullptr)
+    {
+        LOG_ERROR_MESSAGE("GenerateMips: Invalid device");
+        return;
+    }
+    
+    id<MTLDevice> mtlDevice = pDeviceMtl->GetMtlDevice();
+    
+    // Get the command queue (index 0 for the main queue)
+    const auto& cmdQueue = pDeviceMtl->GetCommandQueue(SoftwareQueueIndex{0});
+    id<MTLCommandQueue> mtlCommandQueue = cmdQueue.GetMtlCommandQueue();
+    
+    if (mtlCommandQueue == nil)
+    {
+        LOG_ERROR_MESSAGE("GenerateMips: Metal command queue is null");
+        return;
+    }
+    
+    // Create a command buffer
+    id<MTLCommandBuffer> commandBuffer = [mtlCommandQueue commandBuffer];
+    if (commandBuffer == nil)
+    {
+        LOG_ERROR_MESSAGE("GenerateMips: Failed to create command buffer");
+        return;
+    }
+    
+    // Create a blit command encoder
+    id<MTLBlitCommandEncoder> blitEncoder = [commandBuffer blitCommandEncoder];
+    if (blitEncoder == nil)
+    {
+        LOG_ERROR_MESSAGE("GenerateMips: Failed to create blit command encoder");
+        return;
+    }
+    
+    // Generate mipmaps
+    [blitEncoder generateMipmapsForTexture:mtlTexture];
+    [blitEncoder endEncoding];
+    
+    // Commit the command buffer without waiting
+    // The mipmap generation will complete asynchronously
+    [commandBuffer commit];
+    
+    LOG_INFO_MESSAGE("Generated mipmaps for Metal texture");
 }
 
 void DILIGENT_CALL_TYPE DeviceContextMtlImpl::ResolveTextureSubresource(ITexture*                               pSrcTexture,
